@@ -1,5 +1,6 @@
 from asyncio import ensure_future, gather
 from collections.abc import Mapping
+from concurrent.futures import ThreadPoolExecutor
 from inspect import isawaitable
 from typing import (
     Any,
@@ -15,6 +16,7 @@ from typing import (
     Type,
     cast,
 )
+
 
 try:
     from typing import TypedDict
@@ -426,7 +428,8 @@ class ExecutionContext:
         is_awaitable = self.is_awaitable
         awaitable_fields: List[str] = []
         append_awaitable = awaitable_fields.append
-        for response_name, field_nodes in fields.items():
+
+        def execute_thread(response_name, field_nodes):
             field_path = Path(path, response_name, parent_type.name)
             result = self.execute_field(
                 parent_type, source_value, field_nodes, field_path
@@ -435,6 +438,9 @@ class ExecutionContext:
                 results[response_name] = result
                 if is_awaitable(result):
                     append_awaitable(response_name)
+
+        with ThreadPoolExecutor() as executor:
+            executor.map(execute_thread, fields.keys(), fields.values())
 
         #  If there are no coroutines, we can just return the object
         if not awaitable_fields:
